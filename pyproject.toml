@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "splitguard"
+version = "1.0.0"
+description = "Offline train/validation/test split leakage audit and ledger tool"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+splitguard = "splitguard.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["splitguard*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

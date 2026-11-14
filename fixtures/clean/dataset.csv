@@ -1,0 +1,31 @@
+record_id,text,entity_id,event_time,label
+record-0001,clean sample zero one surveys local split boundaries while tracing amber quartz and synthetic meadow notes into a neutral validation ledger.,entity-0001,2025-01-01T00:00:00Z,demo-label-a
+record-0002,clean sample zero two inspects duplicate fingerprints across isolated partitions with cobalt ribbon and gentle harbor markers.,entity-0002,2025-01-01T01:00:00Z,demo-label-b
+record-0003,clean sample zero three reviews entity isolation using marble sketch and silver compass observations.,entity-0003,2025-01-01T02:00:00Z,demo-label-c
+record-0004,clean sample zero four audits timestamp ordering along a quiet orchard with copper lantern notes.,entity-0004,2025-01-01T03:00:00Z,demo-label-a
+record-0005,clean sample zero five measures label coverage through velvet canyon and prussian blue calibration marks.,entity-0005,2025-01-01T04:00:00Z,demo-label-b
+record-0006,clean sample zero six compares content hashes beside a frozen river and cedar instrument panel.,entity-0006,2025-01-01T05:00:00Z,demo-label-c
+record-0007,clean sample zero seven examines near duplicate candidates using bronze relay and saffron notebook entries.,entity-0007,2025-01-01T06:00:00Z,demo-label-a
+record-0008,clean sample zero eight validates split ratios against a distant windmill and ivory audit stamp.,entity-0008,2025-01-01T07:00:00Z,demo-label-b
+record-0009,clean sample zero nine records manifest integrity with glass atrium and indigo margin annotations.,entity-0009,2025-01-01T08:00:00Z,demo-label-c
+record-0010,clean sample zero ten checks empty split policy near a silent quarry and copper ledger clasp.,entity-0010,2025-01-01T09:00:00Z,demo-label-a
+record-0011,clean sample zero eleven scans ngram shingles across a labyrinth of paper cranes and steel rulers.,entity-0011,2025-01-01T10:00:00Z,demo-label-b
+record-0012,clean sample zero twelve finds temporal boundaries through lavender fields and calibrated pocket watches.,entity-0012,2025-01-01T11:00:00Z,demo-label-c
+record-0013,clean sample zero thirteen builds canonical fingerprints using basalt tiles and folded tracing paper.,entity-0013,2025-01-01T12:00:00Z,demo-label-a
+record-0014,clean sample zero fourteen inspects missing assignments within a glasshouse of numbered envelopes.,entity-0014,2025-01-01T13:00:00Z,demo-label-b
+record-0015,clean sample zero fifteen checks unknown identifiers beside a brass telescope and quiet archive shelf.,entity-0015,2025-01-01T14:00:00Z,demo-label-c
+record-0016,clean sample zero sixteen reviews unknown split values with willow branches and slate markers.,entity-0016,2025-01-01T15:00:00Z,demo-label-a
+record-0017,clean sample zero seventeen detects intra split repeats near a tiled courtyard and woven basket.,entity-0017,2025-01-01T16:00:00Z,demo-label-b
+record-0018,clean sample zero eighteen confirms label presence using ceramic bowls and a quiet clock tower.,entity-0018,2025-01-01T17:00:00Z,demo-label-c
+record-0019,clean sample zero nineteen measures small sample thresholds with granite steps and linen maps.,entity-0019,2025-01-01T18:00:00Z,demo-label-a
+record-0020,clean sample zero twenty closes the training boundary beside a rain washed pavilion and glass beads.,entity-0020,2025-01-01T19:00:00Z,demo-label-b
+record-0021,clean sample zero twenty one opens validation review near a copper weather vane and pale blue thread.,entity-0021,2025-01-01T20:00:00Z,demo-label-a
+record-0022,clean sample zero twenty two verifies validation label coverage with cedar boxes and silver foil.,entity-0022,2025-01-01T21:00:00Z,demo-label-b
+record-0023,clean sample zero twenty three inspects validation timestamps beside a quiet pond and yellow chalk.,entity-0023,2025-01-01T22:00:00Z,demo-label-c
+record-0024,clean sample zero twenty four checks validation groups through woven reeds and copper wire.,entity-0024,2025-01-01T23:00:00Z,demo-label-a
+record-0025,clean sample zero twenty five seals validation evidence with a paper seal and green glass inkwell.,entity-0025,2025-01-02T00:00:00Z,demo-label-b
+record-0026,clean sample zero twenty six begins test review inside a snowy courtyard with orange ribbon.,entity-0026,2025-01-02T01:00:00Z,demo-label-c
+record-0027,clean sample zero twenty seven examines test labels near a stone bridge and violet pencil marks.,entity-0027,2025-01-02T02:00:00Z,demo-label-a
+record-0028,clean sample zero twenty eight verifies test timestamps with an iron gate and paper lanterns.,entity-0028,2025-01-02T03:00:00Z,demo-label-b
+record-0029,clean sample zero twenty nine confirms test group isolation along a dry creek and blue enamel sign.,entity-0029,2025-01-02T04:00:00Z,demo-label-c
+record-0030,clean sample zero thirty records the final clean checkpoint beneath a tall pine and copper bell.,entity-0030,2025-01-02T05:00:00Z,demo-label-a

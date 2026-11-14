@@ -1,0 +1,27 @@
+{
+  "dataset_id_column": "record_id",
+  "text_columns": ["text"],
+  "group_column": "entity_id",
+  "group_isolation": true,
+  "time_column": "event_time",
+  "label_column": "label",
+  "split_column": "split",
+  "expected_splits": ["train", "valid", "test"],
+  "expected_ratios": {"train": 0.7, "valid": 0.15, "test": 0.15},
+  "ratio_tolerance": 0.05,
+  "near_duplicate": {
+    "enabled": true,
+    "ngram": 5,
+    "jaccard_threshold": 0.85,
+    "max_candidates": 2000
+  },
+  "temporal": {
+    "enabled": true,
+    "split_order": ["train", "valid", "test"],
+    "min_gap_seconds": 0
+  },
+  "empty_split_severity": "block",
+  "invalid_time_severity": "block",
+  "small_split_threshold": 3,
+  "label_reference_split": "train"
+}
