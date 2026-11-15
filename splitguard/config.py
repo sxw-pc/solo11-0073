@@ -271,21 +271,22 @@ def config_from_dict(data: Any, path: str | Path = "<config>") -> Config:
     )
 
 
-def load_config(path: str | Path) -> Config:
+def load_config(path: str | Path, *, display_path: str | Path | None = None) -> Config:
     config_path = Path(path)
+    shown = config_path if display_path is None else Path(display_path)
     if not config_path.exists():
-        raise InputError("CONFIG_NOT_FOUND", "configuration file does not exist", path=config_path)
+        raise InputError("CONFIG_NOT_FOUND", "configuration file does not exist", path=shown)
     if not config_path.is_file():
-        raise InputError("CONFIG_NOT_A_FILE", "configuration path is not a file", path=config_path)
+        raise InputError("CONFIG_NOT_A_FILE", "configuration path is not a file", path=shown)
     try:
         raw = config_path.read_text(encoding="utf-8-sig")
     except UnicodeDecodeError as exc:
         raise InputError(
-            "CONFIG_DECODE_ERROR", "configuration is not valid UTF-8", path=config_path
+            "CONFIG_DECODE_ERROR", "configuration is not valid UTF-8", path=shown
         ) from exc
     except OSError as exc:
         raise InputError(
-            "CONFIG_READ_ERROR", f"cannot read configuration: {exc}", path=config_path
+            "CONFIG_READ_ERROR", f"cannot read configuration: {exc}", path=shown
         ) from exc
     try:
         data = json.loads(raw)
@@ -293,7 +294,7 @@ def load_config(path: str | Path) -> Config:
         raise InputError(
             "CONFIG_INVALID_JSON",
             f"invalid JSON: {exc.msg}",
-            path=config_path,
+            path=shown,
             line=exc.lineno,
         ) from exc
-    return config_from_dict(data, config_path)
+    return config_from_dict(data, shown)

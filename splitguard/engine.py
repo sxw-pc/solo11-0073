@@ -16,6 +16,7 @@ from .config import Config, load_config
 from .fingerprint import canonical_sha256, iso_utc, sha256_file, utc_now
 from .ingest import load_dataset, load_manifest
 from .models import Dataset, InputError, Manifest, conclusion_for, severity_counts, sort_findings
+from .snapshot import SnapshotSession
 
 
 @dataclass
@@ -34,12 +35,12 @@ class LoadedInputs:
     config_canonical_sha256: str
 
 
-def _safe_hash(path: Path) -> str:
+def _safe_hash(path: Path, display_path: Path) -> str:
     try:
         return sha256_file(path)
     except OSError as exc:
         raise InputError(
-            "INPUT_READ_ERROR", f"cannot hash input file: {exc}", path=path
+            "INPUT_READ_ERROR", f"cannot hash input file: {exc}", path=display_path
         ) from exc
 
 
@@ -49,18 +50,27 @@ def load_inputs(
     dataset_file = Path(dataset_path)
     splits_file = Path(splits_path)
     config_file = Path(config_path)
-    config = load_config(config_file)
-    dataset = load_dataset(dataset_file, config)
-    manifest = load_manifest(splits_file, config)
-    return LoadedInputs(
-        config=config,
-        dataset=dataset,
-        manifest=manifest,
-        dataset_sha256=_safe_hash(dataset_file),
-        splits_sha256=_safe_hash(splits_file),
-        config_sha256=_safe_hash(config_file),
-        config_canonical_sha256=canonical_sha256(config.to_dict()),
-    )
+    # Capture every input into a private per-run snapshot first, then parse
+    # and hash from those captured bytes.  The reported SHA-256 values are
+    # therefore guaranteed to describe exactly the bytes that were audited,
+    # even if a source path is replaced or overwritten while the run is in
+    # progress.  The snapshot directory is removed on every exit path.
+    with SnapshotSession() as snapshots:
+        config_snapshot = snapshots.capture(config_file, "config")
+        config = load_config(config_snapshot, display_path=config_file)
+        dataset_snapshot = snapshots.capture(dataset_file, "dataset")
+        dataset = load_dataset(dataset_snapshot, config, display_path=dataset_file)
+        splits_snapshot = snapshots.capture(splits_file, "splits")
+        manifest = load_manifest(splits_snapshot, config, display_path=splits_file)
+        return LoadedInputs(
+            config=config,
+            dataset=dataset,
+            manifest=manifest,
+            dataset_sha256=_safe_hash(dataset_snapshot, dataset_file),
+            splits_sha256=_safe_hash(splits_snapshot, splits_file),
+            config_sha256=_safe_hash(config_snapshot, config_file),
+            config_canonical_sha256=canonical_sha256(config.to_dict()),
+        )
 
 
 def _run_checks(loaded: LoadedInputs) -> tuple[list[Any], dict[str, Any]]:
@@ -165,6 +175,11 @@ def build_audit(
         "findings": finding_dicts,
         "reproducibility": {
             "report_core_sha256": report_core_sha256,
+            "input_snapshot": (
+                "dataset, splits and config bytes are captured into a private "
+                "per-run snapshot before parsing; input_sha256 values are "
+                "computed from the same captured bytes that were audited"
+            ),
             "canonicalization": (
                 "JSON with sorted keys, compact separators, UTF-8; "
                 "record IDs and findings sorted"

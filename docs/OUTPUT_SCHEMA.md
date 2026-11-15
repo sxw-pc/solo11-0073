@@ -18,7 +18,7 @@
 | `summary` | object | 结论、发现计数、总数、切分计数 |
 | `metrics` | object | 所有结构化指标 |
 | `findings` | array | 稳定排序的 finding 对象 |
-| `reproducibility` | object | 核心哈希、canonical 规则、排除的运行时间字段 |
+| `reproducibility` | object | 核心哈希、输入快照说明、canonical 规则、排除的运行时间字段 |
 
 `inputs`：
 
@@ -29,6 +29,8 @@
   "config": {"path": "fixtures/leaky/config.json", "sha256": "...", "canonical_sha256": "..."}
 }
 ```
+
+每个 `sha256` 都是对本次运行实际解析的字节计算的：三个输入在解析前被捕获到本次运行私有的临时快照中，解析与散列读取同一份快照字节；`path` 仍是用户给出的源路径。因此报告哈希始终可以由"实际用于审计的快照"复算，即使源路径在运行期间被替换也不会把旧内容绑定到新哈希。
 
 `summary`：
 

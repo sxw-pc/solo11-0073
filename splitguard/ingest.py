@@ -12,16 +12,23 @@ from .models import Dataset, InputError, Manifest, ManifestEntry, Record
 Rows = list[tuple[int, list[str]]]
 
 
-def _ensure_input_file(path: Path, kind: str) -> None:
+def _display(path: Path, display_path: Path | None) -> Path:
+    """Path shown in errors and reports (the audited source, not a snapshot)."""
+    return display_path if display_path is not None else path
+
+
+def _ensure_input_file(path: Path, kind: str, display_path: Path | None = None) -> None:
+    shown = _display(path, display_path)
     code = kind.upper()
     if not path.exists():
-        raise InputError(f"{code}_NOT_FOUND", f"{kind} file does not exist", path=path)
+        raise InputError(f"{code}_NOT_FOUND", f"{kind} file does not exist", path=shown)
     if not path.is_file():
-        raise InputError(f"{code}_NOT_A_FILE", f"{kind} path is not a file", path=path)
+        raise InputError(f"{code}_NOT_A_FILE", f"{kind} path is not a file", path=shown)
 
 
-def _read_rows(path: Path, kind: str) -> Rows:
-    _ensure_input_file(path, kind)
+def _read_rows(path: Path, kind: str, display_path: Path | None = None) -> Rows:
+    shown = _display(path, display_path)
+    _ensure_input_file(path, kind, shown)
     code = kind.upper()
     rows: Rows = []
     try:
@@ -31,18 +38,18 @@ def _read_rows(path: Path, kind: str) -> Rows:
                 rows.append((reader.line_num, row))
     except UnicodeDecodeError as exc:
         raise InputError(
-            f"{code}_DECODE_ERROR", "file is not valid UTF-8", path=path
+            f"{code}_DECODE_ERROR", "file is not valid UTF-8", path=shown
         ) from exc
     except csv.Error as exc:
         raise InputError(
-            f"{code}_CSV_ERROR", f"malformed CSV: {exc}", path=path
+            f"{code}_CSV_ERROR", f"malformed CSV: {exc}", path=shown
         ) from exc
     except OSError as exc:
         raise InputError(
-            f"{code}_READ_ERROR", f"cannot read file: {exc}", path=path
+            f"{code}_READ_ERROR", f"cannot read file: {exc}", path=shown
         ) from exc
     if not rows:
-        raise InputError(f"{code}_EMPTY_FILE", "file is empty", path=path)
+        raise InputError(f"{code}_EMPTY_FILE", "file is empty", path=shown)
     return rows
 
 
@@ -103,17 +110,20 @@ def _required_dataset_columns(config: Config) -> list[str]:
     return list(dict.fromkeys(required))
 
 
-def load_dataset(path: str | Path, config: Config) -> Dataset:
+def load_dataset(
+    path: str | Path, config: Config, *, display_path: str | Path | None = None
+) -> Dataset:
     dataset_path = Path(path)
-    rows = _read_rows(dataset_path, "dataset")
-    header = _validate_header(dataset_path, "dataset", rows[0][1])
+    shown = _display(dataset_path, None if display_path is None else Path(display_path))
+    rows = _read_rows(dataset_path, "dataset", shown)
+    header = _validate_header(shown, "dataset", rows[0][1])
     required = _required_dataset_columns(config)
     missing = sorted(set(required) - set(header))
     if missing:
         raise InputError(
             "DATASET_MISSING_COLUMN",
             f"missing required column(s): {', '.join(missing)}",
-            path=dataset_path,
+            path=shown,
             line=1,
             field_name=missing[0],
         )
@@ -121,14 +131,14 @@ def load_dataset(path: str | Path, config: Config) -> Dataset:
     id_column = config.dataset_id_column
     records: dict[str, Record] = {}
     first_seen: dict[str, int] = {}
-    for line_no, row in _data_rows(dataset_path, "dataset", rows):
+    for line_no, row in _data_rows(shown, "dataset", rows):
         values = {name: row[position] for name, position in index.items()}
         record_id = values[id_column].strip()
         if not record_id:
             raise InputError(
                 "DATASET_EMPTY_ID",
                 "record identifier is empty",
-                path=dataset_path,
+                path=shown,
                 line=line_no,
                 field_name=id_column,
             )
@@ -136,19 +146,22 @@ def load_dataset(path: str | Path, config: Config) -> Dataset:
             raise InputError(
                 "DATASET_DUPLICATE_ID",
                 f"record identifier {record_id!r} first appeared on line {first_seen[record_id]}",
-                path=dataset_path,
+                path=shown,
                 line=line_no,
                 field_name=id_column,
             )
         first_seen[record_id] = line_no
         records[record_id] = Record(record_id, values, line_no)
-    return Dataset(dataset_path, header, records)
+    return Dataset(shown, header, records)
 
 
-def load_manifest(path: str | Path, config: Config) -> Manifest:
+def load_manifest(
+    path: str | Path, config: Config, *, display_path: str | Path | None = None
+) -> Manifest:
     manifest_path = Path(path)
-    rows = _read_rows(manifest_path, "splits")
-    header = _validate_header(manifest_path, "splits", rows[0][1])
+    shown = _display(manifest_path, None if display_path is None else Path(display_path))
+    rows = _read_rows(manifest_path, "splits", shown)
+    header = _validate_header(shown, "splits", rows[0][1])
     expected_columns = ("record_id", config.split_column)
     header_set = set(header)
     missing = [name for name in expected_columns if name not in header_set]
@@ -156,7 +169,7 @@ def load_manifest(path: str | Path, config: Config) -> Manifest:
         raise InputError(
             "MANIFEST_MISSING_COLUMN",
             f"missing required column(s): {', '.join(missing)}",
-            path=manifest_path,
+            path=shown,
             line=1,
             field_name=missing[0],
         )
@@ -165,13 +178,13 @@ def load_manifest(path: str | Path, config: Config) -> Manifest:
         raise InputError(
             "MANIFEST_UNEXPECTED_COLUMN",
             f"only record_id and {config.split_column} are allowed; unexpected: {', '.join(extra)}",
-            path=manifest_path,
+            path=shown,
             line=1,
             field_name=extra[0],
         )
     entry_index = {name: position for position, name in enumerate(header)}
     entries: list[ManifestEntry] = []
-    for line_no, row in _data_rows(manifest_path, "splits", rows):
+    for line_no, row in _data_rows(shown, "splits", rows):
         entries.append(
             ManifestEntry(
                 record_id=row[entry_index["record_id"]].strip(),
@@ -179,4 +192,4 @@ def load_manifest(path: str | Path, config: Config) -> Manifest:
                 line_no=line_no,
             )
         )
-    return Manifest(manifest_path, entries, config.split_column)
+    return Manifest(shown, entries, config.split_column)
