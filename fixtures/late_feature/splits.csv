@@ -1,0 +1,9 @@
+record_id,split
+record-0001,train
+record-0002,train
+record-0003,valid
+record-0004,valid
+record-0005,test
+record-0006,test
+record-0007,test
+record-0008,test

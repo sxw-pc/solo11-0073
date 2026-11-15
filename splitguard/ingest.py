@@ -97,6 +97,16 @@ def _required_dataset_columns(config: Config) -> list[str]:
         required.append(config.group_column)
     if config.temporal.enabled and config.time_column is not None:
         required.append(config.time_column)
+    temporal = config.temporal
+    if temporal.feature_time_rules:
+        if temporal.prediction_at_column is not None:
+            required.append(temporal.prediction_at_column)
+        if temporal.entity_key_column is not None:
+            required.append(temporal.entity_key_column)
+        for rule in temporal.feature_time_rules:
+            required.append(rule.event_time_column)
+            if rule.available_at_column is not None:
+                required.append(rule.available_at_column)
     if config.label_column is not None:
         required.append(config.label_column)
     # Preserve configuration order while removing accidental duplicates.

@@ -82,14 +82,17 @@ def row(
     group: str = "",
     time: str = "2025-01-01T00:00:00Z",
     label: str = "demo-label-a",
+    **extra: str,
 ) -> dict[str, str]:
-    return {
+    values = {
         "record_id": record_id,
         "text": text,
         "entity_id": group,
         "event_time": time,
         "label": label,
     }
+    values.update(extra)
+    return values
 
 
 def write_case(

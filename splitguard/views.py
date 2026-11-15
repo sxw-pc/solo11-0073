@@ -130,6 +130,58 @@ def _findings_html(report: dict[str, Any]) -> str:
     )
 
 
+def _temporal_html(report: dict[str, Any]) -> str:
+    temporal = report.get("metrics", {}).get("temporal", {})
+    if not isinstance(temporal, dict):
+        return ""
+    feature = temporal.get("feature_prediction", {})
+    if not isinstance(feature, dict):
+        feature = {}
+    if not temporal.get("enabled") and not feature.get("enabled"):
+        return "<p class='meta'>时间检查未启用。</p>"
+    rows = [
+        "<tr><th>项目</th><th>值</th></tr>",
+        "<tr><td>全局切分顺序检查</td><td>{}</td></tr>".format(
+            "启用" if temporal.get("global_enabled") else "未启用"
+        ),
+        "<tr><td>全局时间列非法 / 顺序越界</td><td>{} / {}</td></tr>".format(
+            temporal.get("invalid_records", 0), temporal.get("matches", 0)
+        ),
+    ]
+    if feature.get("enabled") or feature.get("rule_count"):
+        unverified = feature.get("unverified_columns", [])
+        bounds = feature.get("data_bounds", {})
+        rows.extend(
+            [
+                "<tr><td>逐特征预测截止语义</td><td><code>{}</code>（{}）</td></tr>".format(
+                    html.escape(str(feature.get("semantics", ""))),
+                    "显式选择" if feature.get("semantics_explicit") else "未显式选择",
+                ),
+                "<tr><td>截止列 / 实体键列</td><td><code>{}</code> / <code>{}</code></td></tr>".format(
+                    html.escape(str(feature.get("prediction_at_column"))),
+                    html.escape(str(feature.get("entity_key_column") or "-")),
+                ),
+                "<tr><td>已核验 / 违规 / 未知</td><td>{} / {} / {}</td></tr>".format(
+                    feature.get("checked_records", 0),
+                    feature.get("violating_records", 0),
+                    feature.get("unknown_records", 0),
+                ),
+                "<tr><td>未能核验的列</td><td>{}</td></tr>".format(
+                    html.escape(
+                        ", ".join(str(item) for item in unverified)
+                        if unverified
+                        else "-"
+                    )
+                ),
+                "<tr><td>数据边界（prediction_at）</td><td><code>{}</code> ~ <code>{}</code></td></tr>".format(
+                    html.escape(str(bounds.get("prediction_at_min") or "-")),
+                    html.escape(str(bounds.get("prediction_at_max") or "-")),
+                ),
+            ]
+        )
+    return "<table>" + "".join(rows) + "</table>"
+
+
 def render_run(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     counts = summary.get("finding_counts", {})
@@ -154,6 +206,7 @@ def render_run(report: dict[str, Any]) -> str:
 生成时间：{html.escape(str(report.get('generated_at', '')))}</p>
 </div>
 <div class="card"><h2>发现列表</h2>{_findings_html(report)}</div>
+<div class="card"><h2>时间与预测截止</h2>{_temporal_html(report)}</div>
 <div class="card"><h2>指标摘要</h2>
 <p>实际占比：<code>{html.escape(json.dumps(metrics.get('split_ratios', {}), sort_keys=True))}</code></p>
 <p>期望占比：<code>{html.escape(json.dumps(metrics.get('expected_ratios', {}), sort_keys=True))}</code></p>

@@ -92,6 +92,11 @@ CLI 摘要会打印运行 ID、总记录数、各切分计数、阻断数、警�
 | `temporal.enabled` | `false` | 是否启用时间穿越检测；为 true 时必须有 `time_column` |
 | `temporal.split_order` | `expected_splits` | 时间顺序，例如 `["train","valid","test"]` |
 | `temporal.min_gap_seconds` | `0` | 后序切分允许早于前序最大时间的秒数 |
+| `temporal.semantics` | `event_time` | 逐特征预测截止语义；配置 `feature_time_rules` 时必须显式写出 `event_time` 或 `serving_time` |
+| `temporal.prediction_at_column` | `null` | 每行预测截止时间列；配置 `feature_time_rules` 时必填 |
+| `temporal.entity_key_column` | `null` | 可选实体键列，用于在证据里标注同一实体的记录 |
+| `temporal.feature_time_rules` | `[]` | 逐特征规则列表，每项含 `feature`、`event_time_column` 和可选/必填的 `available_at_column` |
+| `temporal.feature_time_invalid_severity` | 继承 `invalid_time_severity` | 逐特征检查中非法/缺失时间值的级别 |
 | `empty_split_severity` | `block` | 期望切分为空时的级别，只能为 `block` 或 `warn` |
 | `invalid_time_severity` | `block` | 时间解析失败时的级别，只能为 `block` 或 `warn` |
 | `small_split_threshold` | `5` | 非空切分小于该记录数时产生 `info`；0 表示关闭 |
@@ -156,6 +161,7 @@ record-0002,valid
 - **近似重复**：字符 n-gram shingle 的 SHA-256 倒排桶生成确定性候选对，Jaccard 达阈值且跨切分时阻断；候选超过上限时有明确警告。
 - **实体组泄漏**：同一组 ID 跨切分出现时，每个组一条聚合阻断发现；空组值产生警告。
 - **时间穿越**：按 `split_order` 累积比较前序最大时间与 `min_gap_seconds`，后序记录过早则阻断；非法时间可配置为阻断或警告。
+- **预测截止（逐特征）**：独立于上一条，对每条特征规则比较其事件/可用时间与每行 `prediction_at`。`event_time` 只问事件是否已发生；`serving_time` 还要求特征在预测前已可用，晚到数据即使事件更早也阻断。非法/缺失值按独立级别报告并保持未知，绝不会被当成早于截止的安全值。详见 `docs/ALGORITHM.md` 第 6.1 节。
 - **组成**：切分比例偏差、参考切分标签在验证/测试缺失、小样本提示。
 - **可复现性**：输入文件 SHA-256、规范化配置指纹、排序后的 canonical 核心报告哈希和确定性运行 ID。
 

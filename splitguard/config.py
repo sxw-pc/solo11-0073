@@ -11,6 +11,7 @@ from typing import Any
 from .models import InputError
 
 _SEVERITIES = {"block", "warn"}
+_PREDICTION_SEMANTICS = {"event_time", "serving_time"}
 
 
 @dataclass(frozen=True)
@@ -22,10 +23,50 @@ class NearDuplicateConfig:
 
 
 @dataclass(frozen=True)
+class FeatureTimeRule:
+    """A feature's event time and (optional) serving/ingestion availability time."""
+
+    feature: str
+    event_time_column: str
+    available_at_column: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "feature": self.feature,
+            "event_time_column": self.event_time_column,
+            "available_at_column": self.available_at_column,
+        }
+
+
+@dataclass(frozen=True)
 class TemporalConfig:
     enabled: bool = False
     split_order: tuple[str, ...] = ()
     min_gap_seconds: int = 0
+    # Prediction-time semantics for per-feature checks. Kept separate from the
+    # global split-order check, which always runs on ``time_column``.
+    semantics: str = "event_time"
+    prediction_at_column: str | None = None
+    entity_key_column: str | None = None
+    feature_time_rules: tuple[FeatureTimeRule, ...] = ()
+    # True when the caller explicitly selected ``semantics``; used only for
+    # reporting so the default is never silently confused with a choice.
+    semantics_explicit: bool = False
+    feature_time_invalid_severity: str = "block"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "split_order": list(self.split_order),
+            "min_gap_seconds": self.min_gap_seconds,
+            "semantics": self.semantics,
+            "prediction_at_column": self.prediction_at_column,
+            "entity_key_column": self.entity_key_column,
+            "feature_time_rules": [
+                rule.to_dict() for rule in self.feature_time_rules
+            ],
+            "feature_time_invalid_severity": self.feature_time_invalid_severity,
+        }
 
 
 @dataclass(frozen=True)
@@ -69,11 +110,7 @@ class Config:
                 "jaccard_threshold": self.near_duplicate.jaccard_threshold,
                 "max_candidates": self.near_duplicate.max_candidates,
             },
-            "temporal": {
-                "enabled": self.temporal.enabled,
-                "split_order": list(self.temporal.split_order),
-                "min_gap_seconds": self.temporal.min_gap_seconds,
-            },
+            "temporal": self.temporal.to_dict(),
             "empty_split_severity": self.empty_split_severity,
             "invalid_time_severity": self.invalid_time_severity,
             "small_split_threshold": self.small_split_threshold,
@@ -127,6 +164,54 @@ def _integer(data: dict[str, Any], key: str, default: int, path: Path) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise _fail(path, key, "must be an integer")
     return value
+
+
+def _feature_time_rules(
+    temporal_data: dict[str, Any],
+    semantics: str,
+    path: Path,
+) -> tuple[FeatureTimeRule, ...]:
+    raw_rules = temporal_data.get("feature_time_rules", [])
+    if raw_rules is None:
+        raw_rules = []
+    if not isinstance(raw_rules, list):
+        raise _fail(path, "temporal.feature_time_rules", "must be a list of objects")
+    rules: list[FeatureTimeRule] = []
+    seen_features: set[str] = set()
+    for index, raw_rule in enumerate(raw_rules):
+        field_prefix = f"temporal.feature_time_rules[{index}]"
+        if not isinstance(raw_rule, dict):
+            raise _fail(path, field_prefix, "must be an object")
+        feature = _string(raw_rule, "feature", "", path, allow_empty=True)
+        if not feature.strip():
+            raise _fail(path, f"{field_prefix}.feature", "must not be empty")
+        if feature in seen_features:
+            raise _fail(
+                path, f"{field_prefix}.feature", f"duplicate feature name {feature!r}"
+            )
+        seen_features.add(feature)
+        event_column = _string(raw_rule, "event_time_column", "", path, allow_empty=True)
+        if not event_column.strip():
+            raise _fail(
+                path, f"{field_prefix}.event_time_column", "must not be empty"
+            )
+        available_column = _optional_string(
+            raw_rule, "available_at_column", path
+        )
+        if available_column is not None and available_column == event_column:
+            raise _fail(
+                path,
+                f"{field_prefix}.available_at_column",
+                "must differ from event_time_column",
+            )
+        if semantics == "serving_time" and available_column is None:
+            raise _fail(
+                path,
+                f"{field_prefix}.available_at_column",
+                "is required when temporal.semantics is 'serving_time'",
+            )
+        rules.append(FeatureTimeRule(feature, event_column, available_column))
+    return tuple(rules)
 
 
 def _string_list(
@@ -207,6 +292,61 @@ def config_from_dict(data: Any, path: str | Path = "<config>") -> Config:
     if min_gap_seconds < 0:
         raise _fail(config_path, "temporal.min_gap_seconds", "must be non-negative")
 
+    semantics_raw = temporal_data.get("semantics")
+    semantics_explicit = semantics_raw is not None
+    if semantics_raw is None:
+        semantics = "event_time"
+    else:
+        if not isinstance(semantics_raw, str):
+            raise _fail(config_path, "temporal.semantics", "must be a string")
+        semantics = semantics_raw.strip().lower()
+        if semantics not in _PREDICTION_SEMANTICS:
+            raise _fail(
+                config_path,
+                "temporal.semantics",
+                "must be 'event_time' or 'serving_time'",
+            )
+    raw_rules = temporal_data.get("feature_time_rules", [])
+    rules_present = isinstance(raw_rules, list) and bool(raw_rules)
+    prediction_at_column = _optional_string(
+        temporal_data, "prediction_at_column", config_path
+    )
+    entity_key_column = _optional_string(
+        temporal_data, "entity_key_column", config_path
+    )
+    if rules_present and not temporal_enabled:
+        raise _fail(
+            config_path,
+            "temporal.enabled",
+            "must be true when feature_time_rules are configured",
+        )
+    if rules_present and not semantics_explicit:
+        raise _fail(
+            config_path,
+            "temporal.semantics",
+            "must be explicitly 'event_time' or 'serving_time' "
+            "when feature_time_rules are configured",
+        )
+    if rules_present and prediction_at_column is None:
+        raise _fail(
+            config_path,
+            "temporal.prediction_at_column",
+            "is required when feature_time_rules are configured",
+        )
+    if not rules_present and semantics_explicit:
+        raise _fail(
+            config_path,
+            "temporal.feature_time_rules",
+            "must not be empty when temporal.semantics is configured",
+        )
+    if prediction_at_column is not None and not rules_present:
+        raise _fail(
+            config_path,
+            "temporal.feature_time_rules",
+            "must not be empty when prediction_at_column is configured",
+        )
+    rules = _feature_time_rules(temporal_data, semantics, config_path)
+
     group_column = _optional_string(data, "group_column", config_path)
     group_isolation = _boolean(data, "group_isolation", False, config_path)
     if group_isolation and group_column is None:
@@ -214,7 +354,11 @@ def config_from_dict(data: Any, path: str | Path = "<config>") -> Config:
             config_path, "group_column", "is required when group_isolation is true"
         )
     time_column = _optional_string(data, "time_column", config_path)
-    if temporal_enabled and time_column is None:
+    # ``time_column`` drives the global split-order check. It is required when
+    # temporal checks are enabled unless the user only configured the
+    # independent per-feature prediction-time rules, which need no global
+    # time column of their own.
+    if temporal_enabled and time_column is None and not rules:
         raise _fail(config_path, "time_column", "is required when temporal.enabled is true")
 
     empty_severity = _string(
@@ -223,9 +367,16 @@ def config_from_dict(data: Any, path: str | Path = "<config>") -> Config:
     invalid_severity = _string(
         data, "invalid_time_severity", "block", config_path
     ).lower()
+    feature_invalid_severity = _string(
+        temporal_data,
+        "feature_time_invalid_severity",
+        invalid_severity,
+        config_path,
+    ).lower()
     for field_name, severity in (
         ("empty_split_severity", empty_severity),
         ("invalid_time_severity", invalid_severity),
+        ("temporal.feature_time_invalid_severity", feature_invalid_severity),
     ):
         if severity not in _SEVERITIES:
             raise _fail(config_path, field_name, "must be 'block' or 'warn'")
@@ -263,6 +414,12 @@ def config_from_dict(data: Any, path: str | Path = "<config>") -> Config:
             enabled=temporal_enabled,
             split_order=split_order,
             min_gap_seconds=min_gap_seconds,
+            semantics=semantics,
+            prediction_at_column=prediction_at_column,
+            entity_key_column=entity_key_column,
+            feature_time_rules=rules,
+            semantics_explicit=semantics_explicit,
+            feature_time_invalid_severity=feature_invalid_severity,
         ),
         empty_split_severity=empty_severity,
         invalid_time_severity=invalid_severity,

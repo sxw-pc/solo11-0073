@@ -69,6 +69,90 @@ def _findings_table(findings: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def _temporal_markdown(report: dict[str, Any]) -> list[str]:
+    temporal = report.get("metrics", {}).get("temporal", {})
+    if not isinstance(temporal, dict):
+        return []
+    feature = temporal.get("feature_prediction", {})
+    if not isinstance(feature, dict):
+        feature = {}
+    lines: list[str] = ["## 时间与预测截止", ""]
+    enabled = bool(temporal.get("enabled"))
+    lines.append(
+        f"- 全局切分顺序检查：`{'启用' if temporal.get('global_enabled') else '未启用'}`"
+    )
+    if enabled:
+        lines.append(
+            "- split_order：`"
+            + ", ".join(str(item) for item in temporal.get("split_order", []))
+            + f"` · min_gap_seconds：`{temporal.get('min_gap_seconds', 0)}`"
+        )
+        lines.append(
+            f"- 全局时间列非法记录：`{temporal.get('invalid_records', 0)}`"
+            f" · 顺序越界记录：`{temporal.get('matches', 0)}`"
+        )
+    if feature.get("enabled") or feature.get("rule_count"):
+        semantics = str(feature.get("semantics", "event_time"))
+        explicit = bool(feature.get("semantics_explicit"))
+        lines.append(
+            f"- 逐特征预测截止语义：`{semantics}`"
+            f"（{'显式选择' if explicit else '未显式选择'}）"
+        )
+        lines.append(
+            "- 截止列：`" + str(feature.get("prediction_at_column")) + "`"
+            " · 实体键列：`" + str(feature.get("entity_key_column") or "-") + "`"
+        )
+        unverified = feature.get("unverified_columns", [])
+        bounds = feature.get("data_bounds", {})
+        lines.append(
+            f"- 已核验记录：`{feature.get('checked_records', 0)}`"
+            f" · 违规记录：`{feature.get('violating_records', 0)}`"
+            f" · 未知记录：`{feature.get('unknown_records', 0)}`"
+            f" · 非法值级别：`{feature.get('invalid_value_severity', '-')}`"
+        )
+        lines.append(
+            "- 未能核验的列：`"
+            + (", ".join(str(item) for item in unverified) if unverified else "-")
+            + "`"
+        )
+        lines.append(
+            "- 数据边界：prediction_at `"
+            + str(bounds.get("prediction_at_min") or "-")
+            + "` ~ `"
+            + str(bounds.get("prediction_at_max") or "-")
+            + "`"
+        )
+        excluded = feature.get("excluded_records", {})
+        if isinstance(excluded, dict):
+            lines.append(
+                f"- 未参与记录（非唯一有效分派）：`{excluded.get('count', 0)}`"
+            )
+        rules = feature.get("rules", [])
+        if rules:
+            lines.extend(
+                [
+                    "",
+                    "| 特征 | 事件时间列 | 可用时间列 | 语义 | 已核验 | 违规 | 未知 |",
+                    "| --- | --- | --- | --- | --- | --- | --- |",
+                ]
+            )
+            for rule in rules:
+                lines.append(
+                    "| {feature} | {event} | {available} | {semantics} | "
+                    "{checked} | {violating} | {unknown} |".format(
+                        feature=_cell(rule.get("feature")),
+                        event=_cell(rule.get("event_time_column")),
+                        available=_cell(rule.get("available_at_column") or "-"),
+                        semantics=_cell(rule.get("semantics")),
+                        checked=_cell(rule.get("checked_records", 0)),
+                        violating=_cell(rule.get("violating_records", 0)),
+                        unknown=_cell(rule.get("unverifiable_records", 0)),
+                    )
+                )
+    lines.append("")
+    return lines
+
+
 def render_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     counts = summary.get("finding_counts", {})
@@ -106,6 +190,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "## 发现",
             "",
             *_findings_table(report.get("findings", [])),
+            *_temporal_markdown(report),
             "## 可复现性",
             "",
             f"- 核心报告指纹：`{report.get('reproducibility', {}).get('report_core_sha256', '')}`",
@@ -140,6 +225,71 @@ def _html_finding(finding: dict[str, Any]) -> str:
     </article>"""
 
 
+def _temporal_html(report: dict[str, Any]) -> str:
+    temporal = report.get("metrics", {}).get("temporal", {})
+    if not isinstance(temporal, dict):
+        return ""
+    feature = temporal.get("feature_prediction", {})
+    if not isinstance(feature, dict):
+        feature = {}
+    if not temporal.get("enabled") and not feature.get("enabled"):
+        return ""
+    rows: list[str] = []
+    unverified = feature.get("unverified_columns", [])
+    bounds = feature.get("data_bounds", {})
+    excluded = feature.get("excluded_records", {})
+    rows.append(
+        "<tr><td>全局切分顺序</td><td>{}</td></tr>".format(
+            "启用" if temporal.get("global_enabled") else "未启用"
+        )
+    )
+    if feature.get("enabled") or feature.get("rule_count"):
+        rows.append(
+            "<tr><td>逐特征预测截止语义</td><td><code>{}</code>（{}）</td></tr>".format(
+                html.escape(str(feature.get("semantics", ""))),
+                "显式选择" if feature.get("semantics_explicit") else "未显式选择",
+            )
+        )
+        rows.append(
+            "<tr><td>截止列 / 实体键列</td><td><code>{}</code> / <code>{}</code></td></tr>".format(
+                html.escape(str(feature.get("prediction_at_column"))),
+                html.escape(str(feature.get("entity_key_column") or "-")),
+            )
+        )
+        rows.append(
+            "<tr><td>已核验 / 违规 / 未知</td><td>{} / {} / {}</td></tr>".format(
+                feature.get("checked_records", 0),
+                feature.get("violating_records", 0),
+                feature.get("unknown_records", 0),
+            )
+        )
+        rows.append(
+            "<tr><td>未能核验的列</td><td>{}</td></tr>".format(
+                html.escape(
+                    ", ".join(str(item) for item in unverified) if unverified else "-"
+                )
+            )
+        )
+        rows.append(
+            "<tr><td>数据边界（prediction_at）</td><td><code>{}</code> ~ <code>{}</code></td></tr>".format(
+                html.escape(str(bounds.get("prediction_at_min") or "-")),
+                html.escape(str(bounds.get("prediction_at_max") or "-")),
+            )
+        )
+        if isinstance(excluded, dict):
+            rows.append(
+                "<tr><td>未参与记录（非唯一有效分派）</td><td>{}</td></tr>".format(
+                    excluded.get("count", 0)
+                )
+            )
+    return (
+        "<div class=\"card\"><h2>时间与预测截止</h2><table>"
+        "<tr><th>项目</th><th>值</th></tr>"
+        + "".join(rows)
+        + "</table></div>"
+    )
+
+
 def render_html(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     counts = summary.get("finding_counts", {})
@@ -155,6 +305,7 @@ def render_html(report: dict[str, Any]) -> str:
     label_html = html.escape(
         json.dumps(label_summary, ensure_ascii=False, indent=2, sort_keys=True)
     )
+    temporal_html = _temporal_html(report)
     run_id = html.escape(str(report.get("run_id", "")))
     tool_version = html.escape(str(report.get("tool", {}).get("version", "")))
     generated_at = html.escape(str(report.get("generated_at", "")))
@@ -227,6 +378,7 @@ pre {{ white-space: pre-wrap; overflow-wrap: anywhere; background: #f2f4f7;
 <h2>发现</h2>
 {findings}
 </div>
+{temporal_html}
 <div class="card">
 <h2>标签计数</h2>
 <pre>{label_html}</pre>

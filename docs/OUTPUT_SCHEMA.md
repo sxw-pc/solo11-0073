@@ -84,7 +84,10 @@
 | `GROUP_LEAKAGE` | block | 同一实体组跨切分出现 |
 | `GROUP_EMPTY_VALUE` | warn | 实体组值为空 |
 | `TEMPORAL_LEAKAGE` | block | 后序切分记录早于前序最大时间减允许间隔 |
-| `TEMPORAL_INVALID_TIMESTAMP` | block/warn | 时间字段无法解析，按 `invalid_time_severity` |
+| `TEMPORAL_INVALID_TIMESTAMP` | block/warn | 全局时间列无法解析，按 `invalid_time_severity` |
+| `TEMPORAL_FEATURE_LEAKAGE` | block | 逐特征预测截止检查中特征在 `prediction_at` 不可用（每条 feature+record 一条） |
+| `TEMPORAL_FEATURE_INVALID_TIMESTAMP` | block/warn | 特征事件/可用时间无法解析，按 `feature_time_invalid_severity`，保持未知 |
+| `TEMPORAL_FEATURE_MISSING_TIMESTAMP` | block/warn | 特征事件/可用/截止时间缺失，按 `feature_time_invalid_severity`，保持未知 |
 | `LABEL_MISSING_IN_SPLIT` | warn | 参考切分中的标签在目标切分缺失 |
 | `SPLIT_SMALL_SAMPLE` | info | 非空切分记录数低于小样本阈值 |
 
@@ -113,7 +116,7 @@ finding 全局排序为严重级别、code、切分/相似度、记录 ID、cano
 | `exact_duplicates` | 精确重复计数与开关 |
 | `near_duplicates` | ngram、阈值、候选数、上限是否触发、匹配数 |
 | `group_isolation` | 组检查数、泄漏组数、空组记录数 |
-| `temporal` | 开关、拆分顺序、最小间隔、非法数、匹配数、各切分摘要 |
+| `temporal` | 开关、拆分顺序、最小间隔、非法数、匹配数、各切分摘要、逐特征预测截止摘要 |
 | `composition` | 标签开关、参考切分、小样本阈值、计数、占比 |
 
 `temporal.splits.<split>` 包含：
@@ -130,6 +133,81 @@ finding 全局排序为严重级别、code、切分/相似度、记录 ID、cano
 ```
 
 `composition.counts` 为 `split -> label -> count`；`composition.ratios` 为 `split -> label -> ratio`。比例保留 6 位小数。
+
+`temporal` 顶层保持原有字段（`enabled`、`global_enabled`、`split_order`、`min_gap_seconds`、`invalid_records`、`matches`、`splits`），并新增 `feature_prediction`：
+
+```json
+{
+  "enabled": true,
+  "semantics": "serving_time",
+  "semantics_explicit": true,
+  "prediction_at_column": "prediction_at",
+  "entity_key_column": "entity_id",
+  "rule_count": 2,
+  "checked_records": 12,
+  "unique_records_checked": 12,
+  "considered_records": 14,
+  "violating_records": 1,
+  "unknown_records": 1,
+  "not_evaluated_records": 0,
+  "unverified_columns": ["click_available_at"],
+  "invalid_value_severity": "block",
+  "per_record_basis": true,
+  "evaluations": [
+    {
+      "record_id": "record-0001",
+      "split": "train",
+      "feature": "click_count",
+      "semantics": "serving_time",
+      "event_time_column": "click_event_time",
+      "event_time_raw": "2025-03-01T10:00:00Z",
+      "event_time_utc": "2025-03-01T10:00:00.000000Z",
+      "available_at_column": "click_available_at",
+      "available_at_raw": "2025-03-01T18:00:00Z",
+      "available_at_utc": "2025-03-01T18:00:00.000000Z",
+      "compared_time_utc": "2025-03-01T18:00:00.000000Z",
+      "prediction_at_column": "prediction_at",
+      "prediction_at_raw": "2025-03-01T12:00:00Z",
+      "prediction_at_utc": "2025-03-01T12:00:00.000000Z",
+      "compliant": false,
+      "violated_semantics": "serving_time",
+      "entity_key": "entity-0001"
+    }
+  ],
+  "data_bounds": {
+    "prediction_at_column": "prediction_at",
+    "prediction_at_min": "2025-01-01T00:00:00.000000Z",
+    "prediction_at_max": "2025-01-01T23:00:00.000000Z"
+  },
+  "excluded_records": {
+    "count": 2,
+    "record_ids": ["record-0017", "record-0018"],
+    "reason": "not_a_unique_valid_assignment"
+  },
+  "rules": [
+    {
+      "feature": "click_count",
+      "event_time_column": "click_event_time",
+      "available_at_column": "click_available_at",
+      "semantics": "serving_time",
+      "records_considered": 14,
+      "checked_records": 12,
+      "violating_records": 1,
+      "invalid_records": 0,
+      "missing_records": 1,
+      "unverifiable_records": 1,
+      "unverified_reason": "missing_or_invalid_feature_time",
+      "event_time_min": "...",
+      "event_time_max": "...",
+      "available_at_min": "...",
+      "available_at_max": "..."
+    }
+  ],
+  "failing_features": ["click_count"]
+}
+```
+
+`TEMPORAL_FEATURE_LEAKAGE.evidence.record` 的字段：`record_id`、`split`、`feature`、`semantics`/`violated_semantics`、`event_time_column`、`event_time_raw`、`event_time_utc`、`available_at_column`、`available_at_raw`、`available_at_utc`、`compared_time_utc`、`prediction_at_column`、`prediction_at_raw`、`prediction_at_utc`、`late_arrival`、`late_arrival_explanation`（晚到时为“事件时间早于截止，但线上预测时该特征尚未到达”）、`entity_key`、`line`。
 
 ## 4. SQLite 台账
 

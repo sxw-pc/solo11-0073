@@ -120,6 +120,47 @@ violating = 当前切分中 timestamp < threshold 的记录
 
 每个切分的最小时间、最大时间、记录数、解析成功数和越界数同时写入 temporal metrics。相等时间不视为越界。
 
+### 6.1 逐特征预测截止检查（独立于 6 的全局顺序检查）
+
+全局 split 顺序检查只回答“切分之间的事件时间是否单调”。它不能回答“模型训练时是否用到了预测当时尚不可获得的信息”：一个特征所描述的事件可能早已发生，但该特征本身直到预测之后才入库（晚到数据）。为此新增逐特征规则，并且**不替换**第 6 节的全局检查，两者同时运行。
+
+配置：
+
+```json
+{
+  "temporal": {
+    "enabled": true,
+    "semantics": "serving_time",
+    "prediction_at_column": "prediction_at",
+    "entity_key_column": "entity_id",
+    "feature_time_invalid_severity": "block",
+    "feature_time_rules": [
+      {"feature": "click_count", "event_time_column": "click_event_time", "available_at_column": "click_available_at"},
+      {"feature": "page_views", "event_time_column": "views_event_time"}
+    ]
+  }
+}
+```
+
+- `feature_time_rules` 存在时必须显式声明 `semantics`，避免默认口径被静默套用；`prediction_at_column` 必须配置，且每个特征时间列（以及可用时间列）必须是数据集列。
+- `serving_time` 下每条规则的 `available_at_column` 必填；`event_time` 下可选，配置了也不会参与判定。
+- 每条规则的 `feature` 名唯一；`available_at_column` 不得与 `event_time_column` 相同。
+- 逐特征检查只读取“唯一、有效分派”的记录；未知 split、重复分派、清单缺失的记录不参与，并计入 `excluded_records`。全局顺序检查仍按第 6 节各自运行。
+
+两种语义：
+
+| 语义 | 判定 |
+| --- | --- |
+| `event_time` | `event_time <= prediction_at`，只问特征描述的事件是否已发生，适合离线回顾 |
+| `serving_time` | `available_at <= prediction_at`，还要求特征在预测时已可用；晚到数据即使 `event_time` 更早也阻断 |
+
+对每条有效记录、每条规则、每种类别输出：
+
+- `TEMPORAL_FEATURE_LEAKAGE`（`block`）：每个 (feature, record) 一条 finding，证据包含 `record_id`、`split`、实体键、`event_time`/`available_at`/`prediction_at` 的原始值与 UTC 归一值、`compared_time_utc`、`violated_semantics`、`late_arrival` 及其解释。相等（`<=`）视为安全，超过截止一秒即违规。
+- `TEMPORAL_FEATURE_INVALID_TIMESTAMP` / `TEMPORAL_FEATURE_MISSING_TIMESTAMP`：非法/缺失时间值，级别取 `feature_time_invalid_severity`，证据标 `unknown_verification: true`。这些记录保持“未知”，绝不当作早于截止的安全值。`event_time` 语义下只有事件时间列导致未知；`serving_time` 语义下可用时间列缺失/非法也导致未知。
+
+metrics 的 `temporal.feature_prediction` 记录所选语义及是否显式、截止与实体键列、每条规则的已核验/违规/未知数、事件与可用时间的 min/max 数据边界、`unverified_columns` 和未参与记录。Markdown、HTML 和只读复核台都会展示“所选语义、未能核验的列、数据边界”，避免只看到结论看不到口径。
+
 ## 7. 比例、标签和组成
 
 ### 7.1 比例
