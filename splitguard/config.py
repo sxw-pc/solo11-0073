@@ -12,6 +12,8 @@ from .models import InputError
 
 _SEVERITIES = {"block", "warn"}
 
+CANDIDATE_MODES = ("exact", "bounded")
+
 
 @dataclass(frozen=True)
 class NearDuplicateConfig:
@@ -19,6 +21,7 @@ class NearDuplicateConfig:
     ngram: int = 5
     jaccard_threshold: float = 0.85
     max_candidates: int = 20000
+    candidate_mode: str = "exact"
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,7 @@ class Config:
                 "ngram": self.near_duplicate.ngram,
                 "jaccard_threshold": self.near_duplicate.jaccard_threshold,
                 "max_candidates": self.near_duplicate.max_candidates,
+                "candidate_mode": self.near_duplicate.candidate_mode,
             },
             "temporal": {
                 "enabled": self.temporal.enabled,
@@ -173,6 +177,9 @@ def config_from_dict(data: Any, path: str | Path = "<config>") -> Config:
     ngram = _integer(near_data, "ngram", 5, config_path)
     threshold = _number(near_data, "jaccard_threshold", 0.85, config_path)
     max_candidates = _integer(near_data, "max_candidates", 20000, config_path)
+    candidate_mode = _string(
+        near_data, "candidate_mode", "exact", config_path
+    ).lower()
     if ngram < 1:
         raise _fail(config_path, "near_duplicate.ngram", "must be at least 1")
     if not 0 < threshold <= 1:
@@ -181,6 +188,12 @@ def config_from_dict(data: Any, path: str | Path = "<config>") -> Config:
         )
     if max_candidates < 1:
         raise _fail(config_path, "near_duplicate.max_candidates", "must be at least 1")
+    if candidate_mode not in CANDIDATE_MODES:
+        raise _fail(
+            config_path,
+            "near_duplicate.candidate_mode",
+            "must be one of: " + ", ".join(CANDIDATE_MODES),
+        )
 
     temporal_data = data.get("temporal", {})
     if not isinstance(temporal_data, dict):
@@ -258,6 +271,7 @@ def config_from_dict(data: Any, path: str | Path = "<config>") -> Config:
             ngram=ngram,
             jaccard_threshold=threshold,
             max_candidates=max_candidates,
+            candidate_mode=candidate_mode,
         ),
         temporal=TemporalConfig(
             enabled=temporal_enabled,
