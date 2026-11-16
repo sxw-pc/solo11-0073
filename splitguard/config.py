@@ -11,6 +11,7 @@ from typing import Any
 from .models import InputError
 
 _SEVERITIES = {"block", "warn"}
+_CANDIDATE_MODES = {"exact", "bounded"}
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,9 @@ class NearDuplicateConfig:
     ngram: int = 5
     jaccard_threshold: float = 0.85
     max_candidates: int = 20000
+    candidate_mode: str = "exact"
+    spill_chunk_size: int = 50000
+    temp_dir: str | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +72,9 @@ class Config:
                 "ngram": self.near_duplicate.ngram,
                 "jaccard_threshold": self.near_duplicate.jaccard_threshold,
                 "max_candidates": self.near_duplicate.max_candidates,
+                "candidate_mode": self.near_duplicate.candidate_mode,
+                "spill_chunk_size": self.near_duplicate.spill_chunk_size,
+                "temp_dir": self.near_duplicate.temp_dir,
             },
             "temporal": {
                 "enabled": self.temporal.enabled,
@@ -181,6 +188,26 @@ def config_from_dict(data: Any, path: str | Path = "<config>") -> Config:
         )
     if max_candidates < 1:
         raise _fail(config_path, "near_duplicate.max_candidates", "must be at least 1")
+    candidate_mode_raw = near_data.get("candidate_mode", "exact")
+    if not isinstance(candidate_mode_raw, str) or not candidate_mode_raw.strip():
+        raise _fail(
+            config_path,
+            "near_duplicate.candidate_mode",
+            "must be 'exact' or 'bounded'",
+        )
+    candidate_mode = candidate_mode_raw.strip().lower()
+    if candidate_mode not in _CANDIDATE_MODES:
+        raise _fail(
+            config_path,
+            "near_duplicate.candidate_mode",
+            "must be 'exact' or 'bounded'",
+        )
+    spill_chunk_size = _integer(near_data, "spill_chunk_size", 50000, config_path)
+    if spill_chunk_size < 1:
+        raise _fail(
+            config_path, "near_duplicate.spill_chunk_size", "must be at least 1"
+        )
+    near_temp_dir = _optional_string(near_data, "temp_dir", config_path)
 
     temporal_data = data.get("temporal", {})
     if not isinstance(temporal_data, dict):
@@ -258,6 +285,9 @@ def config_from_dict(data: Any, path: str | Path = "<config>") -> Config:
             ngram=ngram,
             jaccard_threshold=threshold,
             max_candidates=max_candidates,
+            candidate_mode=candidate_mode,
+            spill_chunk_size=spill_chunk_size,
+            temp_dir=near_temp_dir,
         ),
         temporal=TemporalConfig(
             enabled=temporal_enabled,

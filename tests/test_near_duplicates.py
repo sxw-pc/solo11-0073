@@ -72,6 +72,7 @@ def test_candidate_limit_warning_is_deterministic() -> None:
             "ngram": 5,
             "jaccard_threshold": 0.2,
             "max_candidates": 1,
+            "candidate_mode": "bounded",
         }
     )
     result = run_near_duplicate_checks(
@@ -89,7 +90,12 @@ def test_candidate_limit_warning_is_deterministic() -> None:
     )
     assert warning.severity == "warn"
     assert warning.evidence["max_candidates"] == 1
+    assert warning.evidence["budget_exhausted"] is True
+    assert warning.evidence["completeness"] == "incomplete"
+    assert warning.evidence["unchecked"]["buckets_total"] >= 1
     assert result.metrics["candidate_limit_hit"] is True
+    assert result.metrics["budget_exhausted"] is True
+    assert result.metrics["completeness"] == "incomplete"
 
 
 def test_ngram_configuration_affects_metrics() -> None:

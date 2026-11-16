@@ -8,6 +8,17 @@ from typing import Any
 
 _SEVERITY_LABEL = {"block": "阻断", "warn": "警告", "info": "提示"}
 _CONCLUSION_LABEL = {"block": "阻断", "review": "待复核", "pass": "通过"}
+_COMPLETENESS_LABEL = {
+    "complete": "完整",
+    "incomplete": "不完整",
+    "not_run": "未运行",
+}
+
+
+def _completeness_text(value: Any) -> str:
+    token = str(value)
+    label = _COMPLETENESS_LABEL.get(token, token)
+    return f"{label} ({token})"
 
 
 def _cell(value: Any) -> str:
@@ -73,6 +84,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     counts = summary.get("finding_counts", {})
     conclusion = report.get("conclusion", "")
+    near_duplicate = summary.get("near_duplicate", {})
     lines = [
         "# 切分防漏台审计报告",
         "",
@@ -80,6 +92,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- 工具版本：`{report.get('tool', {}).get('version', '')}`",
         f"- 生成时间：`{report.get('generated_at', '')}`",
         f"- 最终结论：**{_CONCLUSION_LABEL.get(conclusion, conclusion)}** (`{conclusion}`)",
+        f"- 近似重复候选策略：`{near_duplicate.get('candidate_mode', '-')}`",
+        f"- 近似重复结论完整度：**{_completeness_text(near_duplicate.get('completeness', '-'))}**",
         "",
         "## 摘要",
         "",
@@ -90,6 +104,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"| 阻断发现 | {counts.get('block', 0)} |",
         f"| 警告发现 | {counts.get('warn', 0)} |",
         f"| 提示发现 | {counts.get('info', 0)} |",
+        f"| 近似重复候选策略 | {near_duplicate.get('candidate_mode', '-')} |",
+        f"| 近似重复结论完整度 | {_completeness_text(near_duplicate.get('completeness', '-'))} |",
         "",
         "## 切分比例与偏差",
         "",
@@ -160,6 +176,11 @@ def render_html(report: dict[str, Any]) -> str:
     generated_at = html.escape(str(report.get("generated_at", "")))
     conclusion_html = html.escape(conclusion)
     conclusion_text = html.escape(_CONCLUSION_LABEL.get(conclusion, conclusion))
+    near_duplicate = summary.get("near_duplicate", {})
+    near_mode = html.escape(str(near_duplicate.get("candidate_mode", "-")))
+    near_completeness = html.escape(
+        _completeness_text(near_duplicate.get("completeness", "-"))
+    )
     total_records = summary.get("total_records", 0)
     assigned_records = summary.get("assigned_records", 0)
     block_count = counts.get("block", 0)
@@ -209,6 +230,7 @@ pre {{ white-space: pre-wrap; overflow-wrap: anywhere; background: #f2f4f7;
 <p>运行 ID：<code>{run_id}</code></p>
 <p>最终结论：<span class="badge {conclusion_html}">{conclusion_text}</span>
    (<code>{conclusion_html}</code>)</p>
+<p>近似重复候选策略：<code>{near_mode}</code> · 结论完整度：{near_completeness}</p>
 <p>工具版本：{tool_version} · 生成时间：{generated_at}</p>
 <table>
 <tr><th>总记录数</th><th>有效分派</th><th>阻断</th><th>警告</th><th>提示</th></tr>

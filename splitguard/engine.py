@@ -104,6 +104,7 @@ def build_audit(
     finding_dicts = [finding.to_dict() for finding in findings]
     counts = severity_counts(findings)
     conclusion = conclusion_for(findings)
+    near_duplicate_metrics = metrics.get("near_duplicates", {})
     summary = {
         "conclusion": conclusion,
         "finding_counts": counts,
@@ -111,6 +112,10 @@ def build_audit(
         "total_records": metrics["total_records"],
         "assigned_records": metrics["assigned_records"],
         "split_counts": metrics["split_counts"],
+        "near_duplicate": {
+            "candidate_mode": near_duplicate_metrics.get("candidate_mode"),
+            "completeness": near_duplicate_metrics.get("completeness"),
+        },
     }
     identity = {
         "tool": {"name": TOOL_NAME, "version": VERSION},

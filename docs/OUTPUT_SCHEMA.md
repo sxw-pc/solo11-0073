@@ -39,9 +39,13 @@
   "findings_total": 17,
   "total_records": 18,
   "assigned_records": 15,
-  "split_counts": {"train": 7, "valid": 3, "test": 5}
+  "split_counts": {"train": 7, "valid": 3, "test": 5},
+  "near_duplicate": {"candidate_mode": "exact", "completeness": "complete"}
 }
 ```
+
+`summary.near_duplicate` 绑定近似重复检查所用的候选策略
+（`exact` / `bounded`）与结论完整度（`complete` / `incomplete` / `not_run`）。
 
 ## 2. Finding 对象
 
@@ -80,7 +84,7 @@
 | `EXACT_DUPLICATE_CROSS_SPLIT` | block | 规范化内容跨切分重复 |
 | `EXACT_DUPLICATE_WITHIN_SPLIT` | warn | 规范化内容仅在单切分内重复 |
 | `NEAR_DUPLICATE_CROSS_SPLIT` | block | 近似重复 Jaccard 达阈值且跨切分 |
-| `NEAR_DUPLICATE_CANDIDATE_LIMIT` | warn | 候选对数量达到上限，候选被截断 |
+| `NEAR_DUPLICATE_CANDIDATE_LIMIT` | warn | bounded 模式候选预算耗尽，候选被截断、结论不完整 |
 | `GROUP_LEAKAGE` | block | 同一实体组跨切分出现 |
 | `GROUP_EMPTY_VALUE` | warn | 实体组值为空 |
 | `TEMPORAL_LEAKAGE` | block | 后序切分记录早于前序最大时间减允许间隔 |
@@ -111,7 +115,7 @@ finding 全局排序为严重级别、code、切分/相似度、记录 ID、cano
 | `ratio_deltas` | 实际减期望 |
 | `ratio_tolerance` | 比例容差 |
 | `exact_duplicates` | 精确重复计数与开关 |
-| `near_duplicates` | ngram、阈值、候选数、上限是否触发、匹配数 |
+| `near_duplicates` | ngram、阈值、候选策略、完整度、候选数、预算/扫描/外排状态、匹配数 |
 | `group_isolation` | 组检查数、泄漏组数、空组记录数 |
 | `temporal` | 开关、拆分顺序、最小间隔、非法数、匹配数、各切分摘要 |
 | `composition` | 标签开关、参考切分、小样本阈值、计数、占比 |
@@ -128,6 +132,44 @@ finding 全局排序为严重级别、code、切分/相似度、记录 ID、cano
   "violating_records": 1
 }
 ```
+
+`near_duplicates` 的公共字段：`enabled`、`ngram`、`jaccard_threshold`、
+`max_candidates`、`candidate_mode`（`exact` / `bounded`）、`completeness`
+（`complete` / `incomplete` / `not_run`）、`candidate_pairs_generated`、
+`candidate_pairs_checked`、`candidate_limit_hit`、`budget_exhausted`、`matches`、
+`budget`（`max_candidates`、`enforced`、`exhausted`）。
+
+`exact` 模式额外包含：
+
+```json
+{
+  "index": {"distinct_shingles": 120, "prefix_entries": 300, "prefix_buckets": 96},
+  "spill": {
+    "chunk_size": 50000,
+    "chunks": 0,
+    "pairs_written": 42,
+    "temp_dir": null,
+    "externalized": false
+  }
+}
+```
+
+`bounded` 模式额外包含 `scan`，描述预算耗尽时的未检查范围：
+
+```json
+{
+  "scan": {
+    "buckets_total": 96,
+    "buckets_scanned": 10,
+    "buckets_partial": 1,
+    "buckets_unscanned": 85,
+    "shingle_occurrences_unscanned": 730,
+    "stopped_at_shingle": "ab12…"
+  }
+}
+```
+
+`NEAR_DUPLICATE_CANDIDATE_LIMIT` 的 `evidence.unchecked` 同样携带上述未检查范围。
 
 `composition.counts` 为 `split -> label -> count`；`composition.ratios` 为 `split -> label -> ratio`。比例保留 6 位小数。
 

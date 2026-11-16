@@ -88,7 +88,10 @@ CLI 摘要会打印运行 ID、总记录数、各切分计数、阻断数、警�
 | `near_duplicate.enabled` | `true` | 是否启用近似重复检测 |
 | `near_duplicate.ngram` | `5` | 字符 n-gram 大小 |
 | `near_duplicate.jaccard_threshold` | `0.85` | Jaccard 判定阈值，范围 `(0,1]` |
-| `near_duplicate.max_candidates` | `20000` | 跨切分候选对上限；超限产生 warn |
+| `near_duplicate.max_candidates` | `20000` | bounded 模式的跨切分候选对预算；耗尽产生 warn 且结论不完整 |
+| `near_duplicate.candidate_mode` | `exact` | 候选策略：`exact` 完整检查全部达阈值对；`bounded` 在候选预算内提前停止 |
+| `near_duplicate.spill_chunk_size` | `50000` | exact 模式候选对外排块大小，约束候选常驻内存 |
+| `near_duplicate.temp_dir` | `null` | exact 模式外排临时目录；null 使用系统临时目录 |
 | `temporal.enabled` | `false` | 是否启用时间穿越检测；为 true 时必须有 `time_column` |
 | `temporal.split_order` | `expected_splits` | 时间顺序，例如 `["train","valid","test"]` |
 | `temporal.min_gap_seconds` | `0` | 后序切分允许早于前序最大时间的秒数 |
@@ -178,7 +181,7 @@ record-0002,valid
 支持 ISO 8601 日期/日期时间、`Z`、带偏移的时间；无时区时间按 UTC 解释。带偏移时间会先转换为 UTC，报告统一输出 `Z` 格式。非法时间按 `invalid_time_severity` 处理。
 
 **近似重复阈值怎么调？**\
-阈值越高越严格，默认 `0.85`。`ngram` 越小对局部改写越敏感，候选也可能更多；`max_candidates` 控制确定性候选上限。超过上限会有 `NEAR_DUPLICATE_CANDIDATE_LIMIT` 警告。
+阈值越高越严格，默认 `0.85`。`ngram` 越小对局部改写越敏感，候选也可能更多。`candidate_mode` 默认 `exact`：借助频率排序的前缀索引与分块外排，在候选内存有界的前提下完整检查所有达阈值跨切分对，结论完整度为 `complete`。设为 `bounded` 时，`max_candidates` 是确定性候选硬预算，预算耗尽会产生 `NEAR_DUPLICATE_CANDIDATE_LIMIT` 警告，报告给出预算状态与未检查范围，结论保持 `incomplete`（至少 `review`，不会 clean pass）。
 
 **报告为什么不完全逐字节一致？**\
 运行时间字段和由它们带来的 artifact 哈希会变化，这是预期行为。相同输入、配置和工具版本会得到相同运行 ID、指标、finding 排序、核心报告指纹和结论。

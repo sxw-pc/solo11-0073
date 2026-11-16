@@ -57,17 +57,50 @@ shingle_hash_i = SHA256(UTF-8(shingle_i))
 
 若文本长度小于等于 `ngram`，整个文本作为一个 shingle。使用 SHA-256 而不是 Python 随机哈希，保证跨进程稳定。
 
-### 4.2 倒排桶和候选
+### 4.2 候选策略（`near_duplicate.candidate_mode`）
 
-为每条记录构建 shingle 哈希集合，然后建立 `shingle_hash -> [record_id...]` 倒排桶。桶内跨切分记录组成候选对：
+近似重复检查为每条记录构建 shingle 哈希集合，候选对的生成方式由
+`near_duplicate.candidate_mode` 决定，报告在 `metrics.near_duplicates.candidate_mode`
+与 `summary.near_duplicate` 中绑定所用策略及结论完整度（`completeness`）。
 
-- 只生成分属不同切分的记录对；
-- 同一无序记录对只保留一次；
-- 为确定性选择，按 shingle 哈希升序、记录 ID 升序遍历桶；
-- 候选集合达到 `max_candidates` 后停止，并产生 `NEAR_DUPLICATE_CANDIDATE_LIMIT` 警告；
-- 证据记录上限、已检查候选数和 `truncated=true`。
+#### exact（默认）：完整性优先
 
-候选上限是针对跨切分唯一候选对的硬上限；没有上限触发时不产生该警告。
+目标：证明没有遗漏任何满足 Jaccard 阈值的跨切分对，绝不把"候选上限达到"
+伪装成无命中。`max_candidates` 在该模式下不生效（报告中
+`budget.enforced=false`）。
+
+1. 统计全局 shingle 频率，按（频率升序、哈希升序）构造**前缀倒排索引**：
+   每条记录只索引其 `size - ceil(threshold * size) + 1` 个最稀有 shingle
+   （ceil 用精确整数运算，避免浮点误差缩小前缀）。由前缀过滤定理，
+   任何 Jaccard 不低于阈值的记录对必共享至少一个前缀 shingle，
+   因此扫描前缀桶是完备候选过滤；高频模板 shingle 排在频率序末尾，
+   几乎不进入前缀，其桶保持很小。前缀索引规模不超过 shingle 总量（线性）。
+2. 桶内先按规范化内容哈希分组，同内容记录对交给精确重复检查、不成对枚举；
+   再按切分分组，只枚举跨切分、跨内容记录对。
+3. 候选对按块（`spill_chunk_size`，默认 50000）排序后外排到临时目录
+   （`temp_dir` 可配置，默认系统临时目录），多路归并去重后逐候选流式输出；
+   **常驻内存的候选对不超过一个块**，完整 pair 集合不常驻内存。
+   临时目录每次运行新建、退出（含异常中断）时清理，重跑绝不复用残留。
+4. 对每个去重后的候选对计算精确 Jaccard（逐候选精确交集）。
+
+代价是更多 CPU 或临时磁盘；收益是结论完整（`completeness=complete`）。
+
+#### bounded：资源预算优先
+
+保留确定性全倒排扫描：按 shingle 哈希升序、记录 ID 升序枚举跨切分候选对，
+候选集合达到 `max_candidates` 立即停止（内存由预算严格约束）。预算耗尽时：
+
+- 产生 `NEAR_DUPLICATE_CANDIDATE_LIMIT`（`warn`），结论至少为 `review`，
+  绝不输出 clean pass；
+- `metrics.near_duplicates` 记录 `budget`（上限、是否耗尽）与 `scan`
+  （桶总数、已扫完整桶、部分扫描桶、未扫描桶及未扫描 shingle 出现次数），
+  `completeness=incomplete`；
+- finding 证据包含预算状态与未检查范围。
+
+预算未耗尽时扫描覆盖全部候选，`completeness=complete`，可以 `pass`。
+
+两种模式的 Jaccard 阈值、匹配判定、finding 证据与确定性排序完全一致；
+预算充足时二者输出的匹配集合相同。
 
 ### 4.3 Jaccard 判定
 
